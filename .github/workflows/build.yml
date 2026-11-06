@@ -85,8 +85,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-log
-          path: ${{ env.PROJECT_DIR }}/build.log
           if-no-files-found: ignore
+          path: ${{ env.PROJECT_DIR }}/build.log
 
       - name: Verify jar
         working-directory: ${{ env.PROJECT_DIR }}
@@ -101,7 +101,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: celestial_dimension-jar
+          if-no-files-found: error
           path: |
             ${{ env.PROJECT_DIR }}/build/libs/*.jar
             !${{ env.PROJECT_DIR }}/build/libs/*-sources.jar
-          if-no-files-found: error

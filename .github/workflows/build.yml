@@ -28,7 +28,6 @@ jobs:
           if [ -z "$FILE" ]; then
             echo "::error::No se encontro settings.gradle. Contenido:"
             ls -la
-            find . -maxdepth 2 -not -path './.git*' | head -n 60
             exit 1
           fi
           DIR=$(dirname "$FILE")
@@ -46,17 +45,48 @@ jobs:
         with:
           gradle-version: 9.4.1
 
-      - name: Generate Gradle Wrapper if missing
+      - name: Generate Gradle Wrapper (in an empty folder)
+        run: |
+          if [ ! -f "$PROJECT_DIR/gradle/wrapper/gradle-wrapper.jar" ]; then
+            mkdir -p /tmp/wrapper-gen
+            cd /tmp/wrapper-gen
+            touch settings.gradle
+            gradle wrapper --gradle-version 9.4.1
+            mkdir -p "$GITHUB_WORKSPACE/$PROJECT_DIR/gradle"
+            cp -r gradle/wrapper "$GITHUB_WORKSPACE/$PROJECT_DIR/gradle/"
+            cp gradlew gradlew.bat "$GITHUB_WORKSPACE/$PROJECT_DIR/"
+          fi
+          chmod +x "$GITHUB_WORKSPACE/$PROJECT_DIR/gradlew"
+
+      - name: Build (with retries)
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            echo "=== Intento $attempt ==="
+            if ./gradlew build --stacktrace --info 2>&1 | tee build.log; then
+              exit 0
+            fi
+            echo "Intento $attempt fallido"
+            sleep 15
+          done
+          exit 1
+
+      - name: Show failure details
+        if: failure()
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
-            gradle wrapper --gradle-version 9.4.1
-          fi
-          chmod +x gradlew
+          echo "---- Lineas relevantes del error ----"
+          grep -nE "DownloadException|Failed to download|Caused by|Could not|https?://|FAILED|error:" build.log | tail -60 || true
 
-      - name: Build
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: ./gradlew build --stacktrace
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: ${{ env.PROJECT_DIR }}/build.log
+          if-no-files-found: ignore
 
       - name: Verify jar
         working-directory: ${{ env.PROJECT_DIR }}

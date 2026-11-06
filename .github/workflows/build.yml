@@ -12,15 +12,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract project zip if needed
+      - name: Extract project zips (in name order, later ones overwrite earlier ones)
         run: |
-          if [ -z "$(find . -maxdepth 3 -name settings.gradle | head -n 1)" ]; then
-            ZIP=$(ls -t *.zip 2>/dev/null | head -n 1 || true)
-            if [ -n "$ZIP" ]; then
-              echo "Descomprimiendo $ZIP"
-              unzip -oq "$ZIP"
-            fi
-          fi
+          for Z in $(ls *.zip 2>/dev/null | sort); do
+            echo "Descomprimiendo $Z"
+            unzip -oq "$Z"
+          done
 
       - name: Locate Gradle project
         run: |
@@ -58,27 +55,19 @@ jobs:
           fi
           chmod +x "$GITHUB_WORKSPACE/$PROJECT_DIR/gradlew"
 
-      - name: Build (with retries)
+      - name: Build
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -o pipefail
-          for attempt in 1 2 3; do
-            echo "=== Intento $attempt ==="
-            if ./gradlew build --stacktrace --info 2>&1 | tee build.log; then
-              exit 0
-            fi
-            echo "Intento $attempt fallido"
-            sleep 15
-          done
-          exit 1
+          ./gradlew build --stacktrace 2>&1 | tee build.log
 
-      - name: Show failure details
+      - name: Show compile errors (short)
         if: failure()
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          echo "---- Lineas relevantes del error ----"
-          grep -nE "DownloadException|Failed to download|Caused by|Could not|https?://|FAILED|error:" build.log | tail -60 || true
+          echo "---- Errores de compilacion (resumen) ----"
+          grep -B1 -A4 "error:" build.log | head -150 || true
 
       - name: Upload build log
         if: always()

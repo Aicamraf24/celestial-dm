@@ -12,11 +12,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Extract project zip if needed
+        run: |
+          if [ -z "$(find . -maxdepth 3 -name settings.gradle | head -n 1)" ]; then
+            ZIP=$(ls -t *.zip 2>/dev/null | head -n 1 || true)
+            if [ -n "$ZIP" ]; then
+              echo "Descomprimiendo $ZIP"
+              unzip -oq "$ZIP"
+            fi
+          fi
+
       - name: Locate Gradle project
         run: |
           FILE=$(find . -maxdepth 3 -name settings.gradle | head -n 1)
           if [ -z "$FILE" ]; then
-            echo "::error::No se encontro settings.gradle en el repositorio. Contenido:"
+            echo "::error::No se encontro settings.gradle. Contenido:"
             ls -la
             find . -maxdepth 2 -not -path './.git*' | head -n 60
             exit 1
@@ -42,3 +52,26 @@ jobs:
           if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
             gradle wrapper --gradle-version 9.4.1
           fi
+          chmod +x gradlew
+
+      - name: Build
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew build --stacktrace
+
+      - name: Verify jar
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          ls -la build/libs/
+          JAR=$(ls build/libs/*.jar | grep -v -- '-sources' | head -n 1)
+          test -s "$JAR"
+          unzip -p "$JAR" fabric.mod.json | head -n 20
+          unzip -l "$JAR" | grep -c 'assets/celestial_dimension/textures'
+
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: celestial_dimension-jar
+          path: |
+            ${{ env.PROJECT_DIR }}/build/libs/*.jar
+            !${{ env.PROJECT_DIR }}/build/libs/*-sources.jar
+          if-no-files-found: error

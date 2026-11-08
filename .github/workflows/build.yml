@@ -1,24 +1,24 @@
 name: Build Celestial Dimension
-
+ 
 on:
   push:
   pull_request:
   workflow_dispatch:
-
+ 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
+ 
       - name: Extract project zips (in name order, later ones overwrite earlier ones)
         run: |
           for Z in $(ls *.zip 2>/dev/null | sort); do
             echo "Descomprimiendo $Z"
             unzip -oq "$Z"
           done
-
+ 
       - name: Locate Gradle project
         run: |
           FILE=$(find . -maxdepth 3 -name settings.gradle | head -n 1)
@@ -30,18 +30,18 @@ jobs:
           DIR=$(dirname "$FILE")
           echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
           echo "Proyecto Gradle en: $DIR"
-
+ 
       - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 25
-
+ 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 9.4.1
-
+ 
       - name: Generate Gradle Wrapper (in an empty folder)
         run: |
           if [ ! -f "$PROJECT_DIR/gradle/wrapper/gradle-wrapper.jar" ]; then
@@ -54,21 +54,35 @@ jobs:
             cp gradlew gradlew.bat "$GITHUB_WORKSPACE/$PROJECT_DIR/"
           fi
           chmod +x "$GITHUB_WORKSPACE/$PROJECT_DIR/gradlew"
-
+ 
       - name: Build
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -o pipefail
           ./gradlew build --stacktrace 2>&1 | tee build.log
-
+ 
+      - name: Diagnostic - Fabric rendering layer classes
+        if: always()
+        run: |
+          set +e
+          FA=$(find ~/.gradle -name 'fabric-api-0.*.jar' | head -n 1)
+          echo "fabric-api jar: $FA"
+          mkdir -p /tmp/fa && cd /tmp/fa
+          unzip -oq "$FA" 'META-INF/jars/*' 2>/dev/null
+          for J in META-INF/jars/*rendering*.jar META-INF/jars/*renderer*.jar; do
+            echo "== $J"
+            unzip -l "$J" | grep -iE "Layer|ChunkSection" | awk '{print $4}' | head -30
+          done
+          exit 0
+ 
       - name: Show compile errors (short)
         if: failure()
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           echo "---- Errores de compilacion (resumen) ----"
           grep -B1 -A4 "error:" build.log | head -150 || true
-
+ 
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -76,7 +90,7 @@ jobs:
           name: build-log
           if-no-files-found: ignore
           path: ${{ env.PROJECT_DIR }}/build.log
-
+ 
       - name: Verify jar
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
@@ -85,7 +99,7 @@ jobs:
           test -s "$JAR"
           unzip -p "$JAR" fabric.mod.json | head -n 20
           unzip -l "$JAR" | grep -c 'assets/celestial_dimension/textures'
-
+ 
       - name: Upload mod jar
         uses: actions/upload-artifact@v4
         with:
